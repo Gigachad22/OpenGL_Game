@@ -63,12 +63,11 @@ GPUProgram gpuProgram; // vertex and fragment shaders
 unsigned int vao;	   // virtual world on the GPU
 int trianglesInCircle = 100;
 
-vec2 rotateByDegree(vec2 toRotate, double angle) {
-	vec2 ret = { (float)(cos(angle) * toRotate.x - sin(angle) * toRotate.y),
-		(float)(sin(angle) * toRotate.x + cos(angle) * toRotate.y)
-	};
-	return ret;
-}
+vec2 rotateByAngle(vec2 toRotate, float angle);
+
+vec2 pointByDistAndDirection(vec2 origin, float distance, vec2 direction);
+
+std::vector<vec2> createCircle(vec2 center, float radius);
 
 // Initialization, create an OpenGL context
 void onInitialization() {
@@ -78,17 +77,16 @@ void onInitialization() {
 	glBindVertexArray(vao);		// make it active
 
 
-
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
 }
 
 // Window has become invalid: Redraw
 void onDisplay() {
+
 	glClearColor(0.25f, 0.25f, 0.25f, 0);     // background color
 	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
 
-	// Set color to (0, 1, 0) = green
 	int location = glGetUniformLocation(gpuProgram.getId(), "color");
 	glUniform3f(location, 0.0f, 0.0f, 0.0f); // 3 floats
 
@@ -104,34 +102,14 @@ void onDisplay() {
 	unsigned int vbo;	   // vertex buffer object
 	glGenBuffers(1, &vbo);	// Generate 1 buffer
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	// Geometry with 24 bytes (6 floats or 3 x 2 coordinates)
-	vec2 center = {
-		0.0f, 0.0f
-	};
 
-	vec2 first = {
-		0.0f, 1.0f
-	};
 
-	vec2 second = rotateByDegree(first, 0.063);
-
-	std::vector<vec2> firstTriangle;
-	firstTriangle.push_back(center); firstTriangle.push_back(first); firstTriangle.push_back(second);
-
-	std::vector<vec2> secTriangle = { center,
-									second,
-									rotateByDegree(second, 2 * 0.063) };
-	/*
-	for (int i = 0; i < trianglesInCircle; i++) {
-		circle.push_back(center);
-		circle.push_back(circle[circle.size() - 2];
-		circle.push_back(rotateByDegree(circle[circle.size() - 2], 0.063));
-	}
-	*/
+	vec2 center = { 0.0f, 0.0f };
+	std::vector<vec2> circle = createCircle(center, 1);
 
 	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
-		sizeof(vec2) * firstTriangle.size(),  // # bytes
-		firstTriangle.data(),	      	// address
+		sizeof(vec2) * circle.size(),  // # bytes
+		circle.data(),	      	// address
 		GL_STATIC_DRAW);	// we do not change later
 
 	glEnableVertexAttribArray(0);  // AttribArray 0
@@ -140,15 +118,35 @@ void onDisplay() {
 		0, NULL); 		     // stride, offset: tightly packed
 
 	glBindVertexArray(vao);  // Draw call
+	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
 
-	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, 3 /*# Elements*/);
+	// GREEN UFO
 
-	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
-		sizeof(vec2) * secTriangle.size(),  // # bytes
-		secTriangle.data(),	      	// address
-		GL_STATIC_DRAW);	// we do not change later
+	location = glGetUniformLocation(gpuProgram.getId(), "color");
+	glUniform3f(location, 0.0f, 1.0f, 0.0f);
 
-	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, 3 /*# Elements*/);
+	vec2 centerGreenUfo = { -0.7f, 0.3f };
+	std::vector<vec2> greenUFO = createCircle(centerGreenUfo, 0.1f);
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * greenUFO.size(),
+		greenUFO.data(),
+		GL_STATIC_DRAW);
+
+	glDrawArrays(GL_TRIANGLES, 0, greenUFO.size());
+
+	// RED UFO
+
+	glUniform3f(location, 1.0f, 0.0f, 0.0f);
+
+	vec2 centerRedUfo = { 0.7f, -0.3f };
+	std::vector<vec2> redUFO = createCircle(centerRedUfo, 0.1f);
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * redUFO.size(),
+		redUFO.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, redUFO.size());
 
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
@@ -194,9 +192,37 @@ void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
 }
 
+bool floatEquals(float a, float b) {
+	float epsilon = std::numeric_limits<float>::epsilon();
+	return std::abs(a - b) < epsilon;
+}
+
 float dotProduct(vec3 p, vec3 q) {
 	return p.x * q.x + p.y * q.y - p.z * q.z;
 }
 
+vec2 rotateByAngle(vec2 around, vec2 toRotate, float angle) {
+	vec2 ret = { (float)(cos(angle) * (toRotate.x - around.x) - sin(angle) * (toRotate.y - around.y)
+		+ around.x),
+		(float)(sin(angle) * (toRotate.x - around.x) + cos(angle) * (toRotate.y - around.y)
+		+ around.y)
+	};
+	return ret;
+}
 
+vec2 pointByDistAndDirection(vec2 origin, float distance, float angle) {
+	return { (float)(origin.x + distance * cos(angle)),
+			(float)(origin.y + distance * sin(angle)) };
+}
 
+std::vector<vec2> createCircle(vec2 center, float radius) {
+	const float angle = 2 * M_PI / trianglesInCircle;
+	std::vector<vec2> circle;
+
+	for (int i = 0; i < trianglesInCircle; i++) {
+		circle.push_back(center);
+		circle.push_back(pointByDistAndDirection(center, radius, angle * i));
+		circle.push_back(pointByDistAndDirection(center, radius, angle * (i + 1)));
+	}
+	return circle;
+}
