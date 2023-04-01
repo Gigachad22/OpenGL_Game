@@ -62,12 +62,17 @@ const char* const fragmentSource = R"(
 GPUProgram gpuProgram; // vertex and fragment shaders
 unsigned int vao;	   // virtual world on the GPU
 int trianglesInCircle = 100;
+float PI = static_cast<float>(M_PI);
+vec2 centerGreen = { 0.7f, 0.0f };
+vec2 centerRed = { -0.7f, 0.3f };
+std::vector<vec2> redDrool = {};
 
-vec2 rotateByAngle(vec2 toRotate, float angle);
-
-vec2 pointByDistAndDirection(vec2 origin, float distance, vec2 direction);
-
+vec2 rotateByAngle(vec2 around, vec2 toRotate, float angle);
+vec2 pointByDistAndDirection(vec2 origin, float distance, float angle);
 std::vector<vec2> createCircle(vec2 center, float radius);
+float getAngle(vec2 from, vec2 to);
+void drawGreenUfo(vec2 center); void drawRedUfo(vec2 center);
+void drawRedDrool();
 
 // Initialization, create an OpenGL context
 void onInitialization() {
@@ -75,7 +80,6 @@ void onInitialization() {
 
 	glGenVertexArrays(1, &vao);	// get 1 vao id
 	glBindVertexArray(vao);		// make it active
-
 
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
@@ -94,18 +98,17 @@ void onDisplay() {
 							  0, 1, 0, 0,    // row-major!
 							  0, 0, 1, 0,
 							  0, 0, 0, 1 };
-
 	location = glGetUniformLocation(gpuProgram.getId(), "MVP");	// Get the GPU location of uniform variable MVP
 	glUniformMatrix4fv(location, 1, GL_TRUE, &MVPtransf[0][0]);	// Load a 4x4 row-major float matrix to the specified location
-
 
 	unsigned int vbo;	   // vertex buffer object
 	glGenBuffers(1, &vbo);	// Generate 1 buffer
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
+	// disc area
 
 	vec2 center = { 0.0f, 0.0f };
-	std::vector<vec2> circle = createCircle(center, 1);
+	std::vector<vec2> circle = createCircle(center, 1.0f);
 
 	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
 		sizeof(vec2) * circle.size(),  // # bytes
@@ -120,40 +123,54 @@ void onDisplay() {
 	glBindVertexArray(vao);  // Draw call
 	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
 
-	// GREEN UFO
 
-	location = glGetUniformLocation(gpuProgram.getId(), "color");
-	glUniform3f(location, 0.0f, 1.0f, 0.0f);
+	drawGreenUfo(centerGreen);
+	drawRedUfo(centerRed);
 
-	vec2 centerGreenUfo = { -0.7f, 0.3f };
-	std::vector<vec2> greenUFO = createCircle(centerGreenUfo, 0.1f);
-
-	glBufferData(GL_ARRAY_BUFFER,
-		sizeof(vec2) * greenUFO.size(),
-		greenUFO.data(),
-		GL_STATIC_DRAW);
-
-	glDrawArrays(GL_TRIANGLES, 0, greenUFO.size());
-
-	// RED UFO
-
-	glUniform3f(location, 1.0f, 0.0f, 0.0f);
-
-	vec2 centerRedUfo = { 0.7f, -0.3f };
-	std::vector<vec2> redUFO = createCircle(centerRedUfo, 0.1f);
-
-	glBufferData(GL_ARRAY_BUFFER,
-		sizeof(vec2) * redUFO.size(),
-		redUFO.data(),
-		GL_STATIC_DRAW);
-	glDrawArrays(GL_TRIANGLES, 0, redUFO.size());
+	drawRedDrool();
+	/*
+	glUniform3f(location, 0.0f, 0.0f, 1.0f);
+	vec2 greenIrisCenter1 = pointByDistAndDirection(greenEyeCenter1, 0.01875f,
+		getAngle(greenEyeCenter1, centerRedUfo));
+	std::vector<vec2> irisis = createCircle(greenIrisCenter1, 0.0125);
+	*/
 
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-	if (key == 'd') glutPostRedisplay();         // if d, invalidate display, i.e. redraw
+	redDrool.push_back(centerRed);
+	switch (key) {
+	case('w'):
+		centerRed = {
+			centerRed.x,
+			centerRed.y + 0.02f
+		};
+		break;
+	case ('a'):
+		centerRed = {
+			centerRed.x - 0.02f,
+			centerRed.y
+		};
+		break;
+	case('s'):
+		centerRed = {
+			centerRed.x,
+			centerRed.y - 0.02f
+		};
+		break;
+	case('d'):
+		centerRed = {
+			centerRed.x + 0.02f,
+			centerRed.y
+		};
+		break;
+	default:
+		break;
+	}
+	redDrool.push_back(centerRed);
+	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
 }
 
 // Key of ASCII code released
@@ -166,6 +183,7 @@ void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the 
 	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
 	float cY = 1.0f - 2.0f * pY / windowHeight;
 	printf("Mouse moved to (%3.2f, %3.2f)\n", cX, cY);
+
 }
 
 // Mouse click event
@@ -202,21 +220,21 @@ float dotProduct(vec3 p, vec3 q) {
 }
 
 vec2 rotateByAngle(vec2 around, vec2 toRotate, float angle) {
-	vec2 ret = { (float)(cos(angle) * (toRotate.x - around.x) - sin(angle) * (toRotate.y - around.y)
-		+ around.x),
-		(float)(sin(angle) * (toRotate.x - around.x) + cos(angle) * (toRotate.y - around.y)
-		+ around.y)
+	vec2 ret = { cosf(angle) * (toRotate.x - around.x) - sinf(angle) * (toRotate.y - around.y)
+		+ around.x,
+		sinf(angle) * (toRotate.x - around.x) + cosf(angle) * (toRotate.y - around.y)
+		+ around.y
 	};
 	return ret;
 }
 
 vec2 pointByDistAndDirection(vec2 origin, float distance, float angle) {
-	return { (float)(origin.x + distance * cos(angle)),
-			(float)(origin.y + distance * sin(angle)) };
+	return { origin.x + distance * cosf(angle),
+			origin.y + distance * sinf(angle) };
 }
 
 std::vector<vec2> createCircle(vec2 center, float radius) {
-	const float angle = 2 * M_PI / trianglesInCircle;
+	const float angle = 2 * PI / trianglesInCircle;
 	std::vector<vec2> circle;
 
 	for (int i = 0; i < trianglesInCircle; i++) {
@@ -225,4 +243,80 @@ std::vector<vec2> createCircle(vec2 center, float radius) {
 		circle.push_back(pointByDistAndDirection(center, radius, angle * (i + 1)));
 	}
 	return circle;
+}
+
+float getAngle(vec2 from, vec2 to) {
+	return acos(dotProduct(from, to) / (length(from) * length(to)));
+}
+
+void drawRedUfo(vec2 center) {
+	// Body
+	int location = glGetUniformLocation(gpuProgram.getId(), "color");
+	glUniform3f(location, 1.0f, 0.0f, 0.0f);
+
+	std::vector<vec2> redUFO = createCircle(center, 0.1f);
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * redUFO.size(),
+		redUFO.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, redUFO.size());
+
+	// White eyes
+
+	glUniform3f(location, 1.0f, 1.0f, 1.0f);
+	vec2 redEyeCenter1 = pointByDistAndDirection(center, 0.075f, PI / 4);
+	std::vector<vec2> redUfoEyes = createCircle(redEyeCenter1, 0.025f);
+
+	vec2 redEyeCenter2 = pointByDistAndDirection(center, 0.075f, 7 * PI / 4);
+	std::vector<vec2> redEye2 = createCircle(redEyeCenter2, 0.025f);
+	redUfoEyes.insert(redUfoEyes.end(), redEye2.begin(), redEye2.end());
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * redUfoEyes.size(),
+		redUfoEyes.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, redUfoEyes.size());
+}
+
+void drawGreenUfo(vec2 center) {
+	// Body
+	int location = glGetUniformLocation(gpuProgram.getId(), "color");
+	glUniform3f(location, 0.0f, 1.0f, 0.0f);
+
+	std::vector<vec2> greenUFO = createCircle(center, 0.1f);
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * greenUFO.size(),
+		greenUFO.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, greenUFO.size());
+
+	// White eyes
+
+	glUniform3f(location, 1.0f, 1.0f, 1.0f);
+
+	vec2 greenEyeCenter1 = pointByDistAndDirection(center, 0.075f, PI / 4);
+	std::vector<vec2> greenUfoEyes = createCircle(greenEyeCenter1, 0.025f);
+
+	vec2 greenEyecenter2 = pointByDistAndDirection(center, 0.075f, 7 * PI / 4);
+	std::vector<vec2> secondEyeToPush = createCircle(greenEyecenter2, 0.025f);
+	greenUfoEyes.insert(greenUfoEyes.end(), secondEyeToPush.begin(), secondEyeToPush.end());
+
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * greenUfoEyes.size(),
+		greenUfoEyes.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, greenUfoEyes.size());
+}
+
+void drawRedDrool() {
+	int location = glGetUniformLocation(gpuProgram.getId(), "color");
+	glUniform3f(location, 1.0f, 1.0f, 1.0f);
+	printf("%d", redDrool.size());
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * redDrool.size(),
+		redDrool.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_LINES, 0, redDrool.size());
 }
