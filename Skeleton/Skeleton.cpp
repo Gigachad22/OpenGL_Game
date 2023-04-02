@@ -97,21 +97,23 @@ std::vector<vec2> createCircle(vec2 center, float radius) {
 float getAngle(vec2 from, vec2 to) {
 	return acos(dotProduct(from, to) / (length(from) * length(to)));
 }
-bool checkKeyPressed(char toCheck) {
-	return (GetAsyncKeyState(toCheck) & 0x8000);
+bool checkIfWPressed(char key) {
+	return (GetAsyncKeyState(key) & 0x8000);
 }
 
 struct Ufo {
 	std::vector<vec2> body;
 	float direction = 0.0f;
 	vec2 center;
+	vec2 eyeCenter1;
+	vec2 eyeCenter2;
 	bool color;
 	std::vector<vec2> drool;
+	float timeOfLastDraw;
+	const float bodyRadius = 0.1f;
+	const float eyeRadius = 0.025f;
 
-	Ufo(bool co, vec2 ce) {
-		color = co;
-		center = ce;
-	}
+	Ufo(bool co, vec2 ce) :center(ce), color(co) {}
 
 	void drawUfo() {
 		// Body
@@ -123,7 +125,7 @@ struct Ufo {
 		else {
 			glUniform3f(location, 0.0f, 1.0f, 0.0f);
 		}
-		body = createCircle(center, 0.1f);
+		body = createCircle(center, bodyRadius);
 
 		glBufferData(GL_ARRAY_BUFFER,
 			sizeof(vec2) * body.size(),
@@ -134,11 +136,11 @@ struct Ufo {
 		// White eyes
 
 		glUniform3f(location, 1.0f, 1.0f, 1.0f);
-		vec2 eyeCenter1 = pointByDistAndDirection(center, 0.075f, (PI / 4 + direction));
-		std::vector<vec2> ufoEyes = createCircle(eyeCenter1, 0.025f);
+		eyeCenter1 = pointByDistAndDirection(center, 0.075f, (PI / 4 + direction));
+		std::vector<vec2> ufoEyes = createCircle(eyeCenter1, eyeRadius);
 
-		vec2 eyeCenter2 = pointByDistAndDirection(center, 0.075f, (7 * PI / 4 + direction));
-		std::vector<vec2> eye2 = createCircle(eyeCenter2, 0.025f);
+		eyeCenter2 = pointByDistAndDirection(center, 0.075f, (7 * PI / 4 + direction));
+		std::vector<vec2> eye2 = createCircle(eyeCenter2, eyeRadius);
 		ufoEyes.insert(ufoEyes.end(), eye2.begin(), eye2.end());
 
 		glBufferData(GL_ARRAY_BUFFER,
@@ -146,6 +148,7 @@ struct Ufo {
 			ufoEyes.data(),
 			GL_STATIC_DRAW);
 		glDrawArrays(GL_TRIANGLES, 0, ufoEyes.size());
+		timeOfLastDraw = glutGet(GLUT_ELAPSED_TIME) / 1000.f;
 	}
 
 	void drawDrool() {
@@ -156,10 +159,30 @@ struct Ufo {
 			drool.data(),
 			GL_STATIC_DRAW);
 		glDrawArrays(GL_LINES, 0, drool.size());
+		if (!color) {
+			drool.push_back(center);
+			direction -= PI / 100;
+			center = pointByDistAndDirection(center, (0.15f * PI) / 100, direction);
+			drool.push_back(center);
+		}
+	}
+
+	void drawIris(vec2 lookAt) {
+		int location = glGetUniformLocation(gpuProgram.getId(), "color");
+		glUniform3f(location, 0.0f, 0.0f, 1.0f);
+
+		std::vector<vec2> irisCenters1 = createCircle(
+			{ eyeCenter1.x - eyeRadius / 4, eyeCenter1.y },
+			eyeRadius / 4);
+		glBufferData(GL_ARRAY_BUFFER,
+			sizeof(vec2) * irisCenters1.size(),
+			irisCenters1.data(),
+			GL_STATIC_DRAW);
+		glDrawArrays(GL_TRIANGLES, 0, irisCenters1.size());
 	}
 };
 Ufo red(true, { -0.7f, 0.3f });
-Ufo green(false, { 0.7f, 0.0f });
+Ufo green(false, { 0.6f, 0.15f });
 
 
 // Initialization, create an OpenGL context
@@ -212,10 +235,14 @@ void onDisplay() {
 	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
 
 
+	
+	red.drawDrool();
+	green.drawDrool();
 	green.drawUfo();
 	red.drawUfo();
+	green.drawIris({ 0.0f, 0.0f }); red.drawIris({ 0.0f, 0.0f });
 
-	red.drawDrool();
+
 	/*
 	glUniform3f(location, 0.0f, 0.0f, 1.0f);
 	vec2 greenIrisCenter1 = pointByDistAndDirection(greenEyeCenter1, 0.01875f,
@@ -228,27 +255,16 @@ void onDisplay() {
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-	red.drool.push_back(red.center);
 	switch (key) {
-	case('w'):
-		red.center = pointByDistAndDirection(red.center, 0.02f, red.direction);
-		break;
 	case ('a'):
-		if (checkKeyPressed('w')) {
-			red.center = pointByDistAndDirection(red.center, 0.02f, red.direction);
-		}
-		red.direction += 0.08f;
+		red.direction += PI / 25;
 		break;
 	case('d'):
-		if (checkKeyPressed('w')) {
-			red.center = pointByDistAndDirection(red.center, 0.02f, red.direction);
-		}
-		red.direction -= 0.08f;
+		red.direction -= PI / 25;
 		break;
 	default:
 		break;
 	}
-	red.drool.push_back(red.center);
 	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
 }
 
@@ -287,4 +303,13 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
+	if (time - green.timeOfLastDraw > 1) {
+		if (checkIfWPressed('W')) {
+
+			red.drool.push_back(red.center);
+			red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
+			red.drool.push_back(red.center);
+		}
+		onDisplay();
+	}
 }
