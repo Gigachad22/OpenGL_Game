@@ -100,6 +100,20 @@ float getAngle(vec2 from, vec2 to) {
 bool checkIfWPressed(char key) {
 	return (GetAsyncKeyState(key) & 0x8000);
 }
+float distanceBetween(vec2 from, vec2 to) {
+	float dx = to.x - from.x;
+	float dy = to.y - from.y;
+	return sqrt(dx * dx + dy * dy);
+}
+vec2 getClosestPoint(std::vector<vec2> toCheck, vec2 goal) {
+	vec2 closestPoint = toCheck[0];
+	for (int i = 0; i < toCheck.size(); i++) {
+		if (distanceBetween(toCheck[i], goal) < distanceBetween(closestPoint, goal)) {
+			closestPoint = toCheck[i];
+		}
+	}
+	return closestPoint;
+}
 
 struct Ufo {
 	std::vector<vec2> body;
@@ -112,6 +126,8 @@ struct Ufo {
 	float timeOfLastDraw;
 	const float bodyRadius = 0.1f;
 	const float eyeRadius = 0.025f;
+	std::vector<vec2> ufoEyes;
+	int drawsSinceLastMouthDraw = 0;
 
 	Ufo(bool co, vec2 ce) :center(ce), color(co) {}
 
@@ -136,10 +152,10 @@ struct Ufo {
 		// White eyes
 
 		glUniform3f(location, 1.0f, 1.0f, 1.0f);
-		eyeCenter1 = pointByDistAndDirection(center, 0.075f, (PI / 4 + direction));
-		std::vector<vec2> ufoEyes = createCircle(eyeCenter1, eyeRadius);
+		eyeCenter1 = pointByDistAndDirection(center, 0.075f, (PI / 3 + direction));
+		ufoEyes = createCircle(eyeCenter1, eyeRadius);
 
-		eyeCenter2 = pointByDistAndDirection(center, 0.075f, (7 * PI / 4 + direction));
+		eyeCenter2 = pointByDistAndDirection(center, 0.075f, (5 * PI / 3 + direction));
 		std::vector<vec2> eye2 = createCircle(eyeCenter2, eyeRadius);
 		ufoEyes.insert(ufoEyes.end(), eye2.begin(), eye2.end());
 
@@ -149,6 +165,25 @@ struct Ufo {
 			GL_STATIC_DRAW);
 		glDrawArrays(GL_TRIANGLES, 0, ufoEyes.size());
 		timeOfLastDraw = glutGet(GLUT_ELAPSED_TIME) / 1000.f;
+		drawsSinceLastMouthDraw++;
+	}
+	void drawMouth() {
+		if (drawsSinceLastMouthDraw < 75) {
+			return;
+		}
+		int location = glGetUniformLocation(gpuProgram.getId(), "color");
+		glUniform3f(location, 0.0f, 0.0f, 0.0f);
+		vec2 mouthCenter = pointByDistAndDirection(center, bodyRadius, direction);
+		std::vector<vec2> mouth = createCircle(mouthCenter, eyeRadius * 2);
+
+		glBufferData(GL_ARRAY_BUFFER,
+			sizeof(vec2) * mouth.size(),
+			mouth.data(),
+			GL_STATIC_DRAW);
+		glDrawArrays(GL_TRIANGLES, 0, mouth.size());
+		if (drawsSinceLastMouthDraw > 150) {
+			drawsSinceLastMouthDraw = 0;
+		}
 	}
 
 	void drawDrool() {
@@ -166,24 +201,48 @@ struct Ufo {
 			drool.push_back(center);
 		}
 	}
-
-	void drawIris(vec2 lookAt) {
-		int location = glGetUniformLocation(gpuProgram.getId(), "color");
-		glUniform3f(location, 0.0f, 0.0f, 1.0f);
-
-		std::vector<vec2> irisCenters1 = createCircle(
-			{ eyeCenter1.x - eyeRadius / 4, eyeCenter1.y },
-			eyeRadius / 4);
-		glBufferData(GL_ARRAY_BUFFER,
-			sizeof(vec2) * irisCenters1.size(),
-			irisCenters1.data(),
-			GL_STATIC_DRAW);
-		glDrawArrays(GL_TRIANGLES, 0, irisCenters1.size());
-	}
 };
 Ufo red(true, { -0.7f, 0.3f });
 Ufo green(false, { 0.6f, 0.15f });
 
+void drawIris(Ufo looking, Ufo at) {
+	int location = glGetUniformLocation(gpuProgram.getId(), "color");
+	glUniform3f(location, 0.0f, 0.0f, 1.0f);
+
+	std::vector<vec2> irisPath1;
+	for (int i = 0; i < looking.ufoEyes.size() / 2; i++) {
+		if (i % 3 == 0) {
+			continue;
+		}
+		irisPath1.push_back(looking.ufoEyes[i]);
+	}
+
+	std::vector<vec2> irisBody1 = createCircle(
+		getClosestPoint(irisPath1, at.center),
+		looking.eyeRadius / 1.5);
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * irisBody1.size(),
+		irisBody1.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, irisBody1.size());
+
+	std::vector<vec2> irisPath2;
+	for (int i = looking.ufoEyes.size() / 2; i < looking.ufoEyes.size(); i++) {
+		if (i % 3 == 0) {
+			continue;
+		}
+		irisPath2.push_back(looking.ufoEyes[i]);
+	}
+
+	std::vector<vec2> irisBody2 = createCircle(
+		getClosestPoint(irisPath2, at.center),
+		looking.eyeRadius / 1.5);
+	glBufferData(GL_ARRAY_BUFFER,
+		sizeof(vec2) * irisBody2.size(),
+		irisBody2.data(),
+		GL_STATIC_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, irisBody2.size());
+}
 
 // Initialization, create an OpenGL context
 void onInitialization() {
@@ -216,8 +275,6 @@ void onDisplay() {
 	glGenBuffers(1, &vbo);	// Generate 1 buffer
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-	// disc area
-
 	vec2 center = { 0.0f, 0.0f };
 	std::vector<vec2> circle = createCircle(center, 1.0f);
 
@@ -233,38 +290,19 @@ void onDisplay() {
 
 	glBindVertexArray(vao);  // Draw call
 	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
-
-
 	
 	red.drawDrool();
 	green.drawDrool();
 	green.drawUfo();
 	red.drawUfo();
-	green.drawIris({ 0.0f, 0.0f }); red.drawIris({ 0.0f, 0.0f });
-
-
-	/*
-	glUniform3f(location, 0.0f, 0.0f, 1.0f);
-	vec2 greenIrisCenter1 = pointByDistAndDirection(greenEyeCenter1, 0.01875f,
-		getAngle(greenEyeCenter1, centerRedUfo));
-	std::vector<vec2> irisis = createCircle(greenIrisCenter1, 0.0125);
-	*/
+	drawIris(red, green); drawIris(green, red);
+	red.drawMouth(); green.drawMouth();
 
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-	switch (key) {
-	case ('a'):
-		red.direction += PI / 25;
-		break;
-	case('d'):
-		red.direction -= PI / 25;
-		break;
-	default:
-		break;
-	}
 	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
 }
 
@@ -302,13 +340,18 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
-	if (time - green.timeOfLastDraw > 1) {
-		if (checkIfWPressed('W')) {
-
+	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.f; // elapsed time since the start of the program
+	if ((time - green.timeOfLastDraw) > 0.01) {
+		if (checkIfWPressed('E')) {
 			red.drool.push_back(red.center);
 			red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
 			red.drool.push_back(red.center);
+		}
+		if (checkIfWPressed('S')) {
+			red.direction += PI / 100;
+		}
+		if (checkIfWPressed('F')) {
+			red.direction -= PI / 100;
 		}
 		onDisplay();
 	}
