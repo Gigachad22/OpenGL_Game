@@ -65,8 +65,9 @@ int trianglesInCircle = 100;
 float PI = static_cast<float>(M_PI);
 
 bool floatEquals(float a, float b) {
-	float epsilon = std::numeric_limits<float>::epsilon();
-	return std::abs(a - b) < epsilon;
+	float epsilon = 0.0000000f;
+	float difference = (a - b) < 0 ? -(a - b) : (a - b);
+	return difference < epsilon;
 }
 float dotProduct(vec3 p, vec3 q) {
 	return p.x * q.x + p.y * q.y - p.z * q.z;
@@ -97,9 +98,6 @@ std::vector<vec2> createCircle(vec2 center, float radius) {
 float getAngle(vec2 from, vec2 to) {
 	return acos(dotProduct(from, to) / (length(from) * length(to)));
 }
-bool checkIfWPressed(char key) {
-	return (GetAsyncKeyState(key) & 0x8000);
-}
 float distanceBetween(vec2 from, vec2 to) {
 	float dx = to.x - from.x;
 	float dy = to.y - from.y;
@@ -113,6 +111,14 @@ vec2 getClosestPoint(std::vector<vec2> toCheck, vec2 goal) {
 		}
 	}
 	return closestPoint;
+}
+bool contains(std::vector<char> in, char toCheck) {
+	for (int i = 0; i < in.size(); i++) {
+		if (in[i] == toCheck) {
+			return true;
+		}
+	}
+	return false;
 }
 
 struct Ufo {
@@ -204,6 +210,7 @@ struct Ufo {
 };
 Ufo red(true, { -0.7f, 0.3f });
 Ufo green(false, { 0.6f, 0.15f });
+std::vector<char> keysPressed;
 
 void drawIris(Ufo looking, Ufo at) {
 	int location = glGetUniformLocation(gpuProgram.getId(), "color");
@@ -303,11 +310,56 @@ void onDisplay() {
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
+	switch (key) {
+	case 'e':
+		keysPressed.push_back(key);
+		break;
+	case 's':
+		keysPressed.push_back(key);
+		break;
+	case 'f':
+		keysPressed.push_back(key);
+		break;
+	default: break;
+	}
 	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
 }
 
 // Key of ASCII code released
 void onKeyboardUp(unsigned char key, int pX, int pY) {
+	switch (key) {
+	case 'e':
+		for (auto it = keysPressed.begin(); it != keysPressed.end(); ) {
+			if (*it == key) {
+				it = keysPressed.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+		break;
+	case 's':
+		for (auto it = keysPressed.begin(); it != keysPressed.end(); ) {
+			if (*it == key) {
+				it = keysPressed.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+		break;
+	case 'f':
+		for (auto it = keysPressed.begin(); it != keysPressed.end(); ) {
+			if (*it == key) {
+				it = keysPressed.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+		break;
+	default: break;
+	}
 }
 
 // Move mouse with key pressed
@@ -324,7 +376,7 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	// Convert to normalized device space
 	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
 	float cY = 1.0f - 2.0f * pY / windowHeight;
-
+/*
 	char* buttonStat;
 	switch (state) {
 	case GLUT_DOWN: buttonStat = "pressed"; break;
@@ -336,21 +388,22 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
 	case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
 	}
+*/
 }
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
 	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.f; // elapsed time since the start of the program
 	if ((time - green.timeOfLastDraw) > 0.01) {
-		if (checkIfWPressed('E')) {
+		if (contains(keysPressed, 'e')) {
 			red.drool.push_back(red.center);
 			red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
 			red.drool.push_back(red.center);
 		}
-		if (checkIfWPressed('S')) {
+		if (contains(keysPressed,'f')) {
 			red.direction += PI / 100;
 		}
-		if (checkIfWPressed('F')) {
+		if (contains(keysPressed, 's')) {
 			red.direction -= PI / 100;
 		}
 		onDisplay();
