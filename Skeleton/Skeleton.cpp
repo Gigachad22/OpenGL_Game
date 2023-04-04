@@ -65,13 +65,31 @@ int trianglesInCircle = 100;
 float PI = static_cast<float>(M_PI);
 int i = 0;
 
+
+float dotProduct(vec3 p, vec3 q) {
+	return p.x * q.x + p.y * q.y - p.z * q.z;
+}
+vec3 hyperbolicPointByDistAndDirection(vec3 origin, float distance, vec3 angle) {
+	float coshT = coshf(distance);
+	float sinhT = sinhf(distance);
+
+	return (origin * coshT) + (angle * sinhT);
+
+}
+float hyperBolicDistanceBetween(vec3 from, vec3 to) {
+	return acoshf(dotProduct(-to, from));
+}
+vec2 projectPointFromHyperbolic(vec3 point) {
+	return {
+		point.x / point.z - 1,
+		point.y / point.z - 1
+	};
+}
+
 bool floatEquals(float a, float b) {
 	float epsilon = 0.0000000f;
 	float difference = (a - b) < 0 ? -(a - b) : (a - b);
 	return difference < epsilon;
-}
-float dotProduct(vec3 p, vec3 q) {
-	return p.x * q.x + p.y * q.y - p.z * q.z;
 }
 vec2 rotateByAngle(vec2 around, vec2 toRotate, float angle) {
 	vec2 ret = { cosf(angle) * (toRotate.x - around.x) - sinf(angle) * (toRotate.y - around.y)
@@ -85,10 +103,10 @@ vec2 pointByDistAndDirection(vec2 origin, float distance, float angle) {
 	return { origin.x + distance * cosf(angle),
 			origin.y + distance * sinf(angle) };
 }
-std::vector<vec2> createCircle(vec2 center, float radius) {
+std::vector<vec2> createCircle(vec3 oldCenter, float radius) {
 	const float angle = 2 * PI / trianglesInCircle;
 	std::vector<vec2> circle;
-
+	vec2 center = projectPointFromHyperbolic(oldCenter);
 	for (int i = 0; i < trianglesInCircle; i++) {
 		circle.push_back(center);
 		circle.push_back(pointByDistAndDirection(center, radius, angle * i));
@@ -125,7 +143,7 @@ bool contains(std::vector<char> in, char toCheck) {
 struct Ufo {
 	std::vector<vec2> body;
 	float direction = 0.0f;
-	vec2 center;
+	vec3 hyperbolicCenter;
 	vec2 eyeCenter1;
 	vec2 eyeCenter2;
 	bool color;
@@ -136,7 +154,7 @@ struct Ufo {
 	std::vector<vec2> ufoEyes;
 	int drawsSinceLastMouthDraw = 0;
 
-	Ufo(bool co, vec2 ce) :center(ce), color(co) {}
+	Ufo(bool co, vec3 ce) :hyperbolicCenter(ce), color(co) {}
 
 	void drawUfo() {
 		// Body
@@ -148,6 +166,7 @@ struct Ufo {
 		else {
 			glUniform3f(location, 0.0f, 1.0f, 0.0f);
 		}
+		vec2 center = projectPointFromHyperbolic(hyperbolicCenter);
 		body.clear();
 		body = createCircle(center, bodyRadius);
 
@@ -182,6 +201,8 @@ struct Ufo {
 		}
 		int location = glGetUniformLocation(gpuProgram.getId(), "color");
 		glUniform3f(location, 0.0f, 0.0f, 0.0f);
+
+		vec2 center = projectPointFromHyperbolic(hyperbolicCenter);
 		vec2 mouthCenter = pointByDistAndDirection(center, bodyRadius, direction);
 		std::vector<vec2> mouth = createCircle(mouthCenter, eyeRadius * 2);
 
@@ -224,9 +245,11 @@ void drawIris(Ufo looking, Ufo at) {
 		}
 		irisPath1.push_back(looking.ufoEyes[i]);
 	}
+	vec2 atCenter = projectPointFromHyperbolic(at.hyperbolicCenter);
+
 
 	std::vector<vec2> irisBody1 = createCircle(
-		getClosestPoint(irisPath1, at.center),
+		getClosestPoint(irisPath1, atCenter),
 		looking.eyeRadius / 1.5);
 	glBufferData(GL_ARRAY_BUFFER,
 		sizeof(vec2) * irisBody1.size(),
@@ -243,21 +266,13 @@ void drawIris(Ufo looking, Ufo at) {
 	}
 
 	std::vector<vec2> irisBody2 = createCircle(
-		getClosestPoint(irisPath2, at.center),
+		getClosestPoint(irisPath2, atCenter),
 		looking.eyeRadius / 1.5);
 	glBufferData(GL_ARRAY_BUFFER,
 		sizeof(vec2) * irisBody2.size(),
 		irisBody2.data(),
 		GL_DYNAMIC_DRAW);
 	glDrawArrays(GL_TRIANGLES, 0, irisBody2.size());
-}
-void greenMotion(int value) {
-	green.drool.push_back(green.center);
-	green.direction -= PI / 100;
-	green.center = pointByDistAndDirection(green.center, (0.15f * PI) / 100, green.direction);
-	green.drool.push_back(green.center);
-	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
-	glutTimerFunc(10, greenMotion, 0);
 }
 // Initialization, create an OpenGL context
 void onInitialization() {
@@ -272,11 +287,6 @@ void onInitialization() {
 
 // Window has become invalid: Redraw
 void onDisplay() {
-	if (i == 0) {
-		glutTimerFunc(10, greenMotion, 0);
-		i++;
-	}
-	
 	glClearColor(0.25f, 0.25f, 0.25f, 0);     // background color
 	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
 
@@ -311,9 +321,11 @@ void onDisplay() {
 	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
 
 	if (contains(keysPressed, 'e')) {
-		red.drool.push_back(red.center);
-		red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
-		red.drool.push_back(red.center);
+		vec2 drool = projectPointFromHyperbolic(red.hyperbolicCenter);
+		red.drool.push_back(drool);
+		red.hyperbolicCenter = hyperbolicPointByDistAndDirection(red.hyperbolicCenter, 0.0035f, red.direction);
+		drool = projectPointFromHyperbolic(red.hyperbolicCenter);
+		red.drool.push_back(drool);
 	}
 	if (contains(keysPressed, 'f')) {
 		red.direction += PI / 100;
@@ -326,7 +338,7 @@ void onDisplay() {
 	green.drawDrool();
 	green.drawUfo();
 	red.drawUfo();
-	drawIris(red, green); drawIris(green, red);
+	drawIris(green, red); drawIris(red, green);
 	red.drawMouth(); green.drawMouth();
 
 	glDeleteBuffers(1, &vbo);
@@ -421,4 +433,13 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
 	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.f; // elapsed time since the start of the program
+	if ((time - green.timeOfLastDraw) > 0.01) {
+		vec2 drool = projectPointFromHyperbolic(green.hyperbolicCenter);
+		green.drool.push_back(drool);
+		green.direction -= PI / 100;
+		green.hyperbolicCenter = hyperbolicPointByDistAndDirection(green.hyperbolicCenter, (0.15f * PI) / 100, green.direction);
+		drool = projectPointFromHyperbolic(green.hyperbolicCenter);
+		green.drool.push_back(drool);
+		glutPostRedisplay();
+	}
 }
