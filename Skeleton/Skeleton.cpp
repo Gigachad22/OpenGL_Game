@@ -1,5 +1,5 @@
 //=============================================================================================
-// Mintaprogram: Zöld háromszög. Ervenyes 2019. osztol.
+// Mintaprogram: Zld hromszg. Ervenyes 2019. osztol.
 //
 // A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
 // Tilos:
@@ -63,6 +63,7 @@ GPUProgram gpuProgram; // vertex and fragment shaders
 unsigned int vao;	   // virtual world on the GPU
 int trianglesInCircle = 100;
 float PI = static_cast<float>(M_PI);
+int i = 0;
 
 bool floatEquals(float a, float b) {
 	float epsilon = 0.0000000f;
@@ -147,17 +148,19 @@ struct Ufo {
 		else {
 			glUniform3f(location, 0.0f, 1.0f, 0.0f);
 		}
+		body.clear();
 		body = createCircle(center, bodyRadius);
 
 		glBufferData(GL_ARRAY_BUFFER,
 			sizeof(vec2) * body.size(),
 			body.data(),
-			GL_STATIC_DRAW);
+			GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_TRIANGLES, 0, body.size());
 
 		// White eyes
 
 		glUniform3f(location, 1.0f, 1.0f, 1.0f);
+		ufoEyes.clear();
 		eyeCenter1 = pointByDistAndDirection(center, 0.075f, (PI / 3 + direction));
 		ufoEyes = createCircle(eyeCenter1, eyeRadius);
 
@@ -168,7 +171,7 @@ struct Ufo {
 		glBufferData(GL_ARRAY_BUFFER,
 			sizeof(vec2) * ufoEyes.size(),
 			ufoEyes.data(),
-			GL_STATIC_DRAW);
+			GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_TRIANGLES, 0, ufoEyes.size());
 		timeOfLastDraw = glutGet(GLUT_ELAPSED_TIME) / 1000.f;
 		drawsSinceLastMouthDraw++;
@@ -185,7 +188,7 @@ struct Ufo {
 		glBufferData(GL_ARRAY_BUFFER,
 			sizeof(vec2) * mouth.size(),
 			mouth.data(),
-			GL_STATIC_DRAW);
+			GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_TRIANGLES, 0, mouth.size());
 		if (drawsSinceLastMouthDraw > 150) {
 			drawsSinceLastMouthDraw = 0;
@@ -193,19 +196,17 @@ struct Ufo {
 	}
 
 	void drawDrool() {
+		if (!color) {
+
+		}
 		int location = glGetUniformLocation(gpuProgram.getId(), "color");
 		glUniform3f(location, 1.0f, 1.0f, 1.0f);
 		glBufferData(GL_ARRAY_BUFFER,
 			sizeof(vec2) * drool.size(),
 			drool.data(),
-			GL_STATIC_DRAW);
+			GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_LINES, 0, drool.size());
-		if (!color) {
-			drool.push_back(center);
-			direction -= PI / 100;
-			center = pointByDistAndDirection(center, (0.15f * PI) / 100, direction);
-			drool.push_back(center);
-		}
+
 	}
 };
 Ufo red(true, { -0.7f, 0.3f });
@@ -230,7 +231,7 @@ void drawIris(Ufo looking, Ufo at) {
 	glBufferData(GL_ARRAY_BUFFER,
 		sizeof(vec2) * irisBody1.size(),
 		irisBody1.data(),
-		GL_STATIC_DRAW);
+		GL_DYNAMIC_DRAW);
 	glDrawArrays(GL_TRIANGLES, 0, irisBody1.size());
 
 	std::vector<vec2> irisPath2;
@@ -247,10 +248,17 @@ void drawIris(Ufo looking, Ufo at) {
 	glBufferData(GL_ARRAY_BUFFER,
 		sizeof(vec2) * irisBody2.size(),
 		irisBody2.data(),
-		GL_STATIC_DRAW);
+		GL_DYNAMIC_DRAW);
 	glDrawArrays(GL_TRIANGLES, 0, irisBody2.size());
 }
-
+void greenMotion(int value) {
+	green.drool.push_back(green.center);
+	green.direction -= PI / 100;
+	green.center = pointByDistAndDirection(green.center, (0.15f * PI) / 100, green.direction);
+	green.drool.push_back(green.center);
+	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
+	glutTimerFunc(10, greenMotion, 0);
+}
 // Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
@@ -264,7 +272,11 @@ void onInitialization() {
 
 // Window has become invalid: Redraw
 void onDisplay() {
-
+	if (i == 0) {
+		glutTimerFunc(10, greenMotion, 0);
+		i++;
+	}
+	
 	glClearColor(0.25f, 0.25f, 0.25f, 0);     // background color
 	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
 
@@ -288,7 +300,7 @@ void onDisplay() {
 	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
 		sizeof(vec2) * circle.size(),  // # bytes
 		circle.data(),	      	// address
-		GL_STATIC_DRAW);	// we do not change later
+		GL_DYNAMIC_DRAW);	// we do not change later
 
 	glEnableVertexAttribArray(0);  // AttribArray 0
 	glVertexAttribPointer(0,       // vbo -> AttribArray 0
@@ -297,7 +309,19 @@ void onDisplay() {
 
 	glBindVertexArray(vao);  // Draw call
 	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, circle.size() /*# Elements*/);
-	
+
+	if (contains(keysPressed, 'e')) {
+		red.drool.push_back(red.center);
+		red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
+		red.drool.push_back(red.center);
+	}
+	if (contains(keysPressed, 'f')) {
+		red.direction += PI / 100;
+	}
+	if (contains(keysPressed, 's')) {
+		red.direction -= PI / 100;
+	}
+
 	red.drawDrool();
 	green.drawDrool();
 	green.drawUfo();
@@ -305,6 +329,7 @@ void onDisplay() {
 	drawIris(red, green); drawIris(green, red);
 	red.drawMouth(); green.drawMouth();
 
+	glDeleteBuffers(1, &vbo);
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
 
@@ -360,6 +385,8 @@ void onKeyboardUp(unsigned char key, int pX, int pY) {
 		break;
 	default: break;
 	}
+	glutPostRedisplay();         // if d, invalidate display, i.e. redraw
+
 }
 
 // Move mouse with key pressed
@@ -376,36 +403,22 @@ void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel co
 	// Convert to normalized device space
 	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
 	float cY = 1.0f - 2.0f * pY / windowHeight;
-/*
-	char* buttonStat;
-	switch (state) {
-	case GLUT_DOWN: buttonStat = "pressed"; break;
-	case GLUT_UP:   buttonStat = "released"; break;
-	}
+	/*
+		char* buttonStat;
+		switch (state) {
+		case GLUT_DOWN: buttonStat = "pressed"; break;
+		case GLUT_UP:   buttonStat = "released"; break;
+		}
 
-	switch (button) {
-	case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;
-	case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
-	case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
-	}
-*/
+		switch (button) {
+		case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;
+		case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
+		case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
+		}
+	*/
 }
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
 	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.f; // elapsed time since the start of the program
-	if ((time - green.timeOfLastDraw) > 0.01) {
-		if (contains(keysPressed, 'e')) {
-			red.drool.push_back(red.center);
-			red.center = pointByDistAndDirection(red.center, 0.0035f, red.direction);
-			red.drool.push_back(red.center);
-		}
-		if (contains(keysPressed,'f')) {
-			red.direction += PI / 100;
-		}
-		if (contains(keysPressed, 's')) {
-			red.direction -= PI / 100;
-		}
-		onDisplay();
-	}
 }
