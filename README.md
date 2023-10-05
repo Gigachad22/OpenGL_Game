@@ -1,4 +1,4 @@
-# OpenGL_Game
+# UFO Game
 
 My first homework for Computer Graphics course.
 
